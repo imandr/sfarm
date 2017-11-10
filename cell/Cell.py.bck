@@ -1,0 +1,53 @@
+import socket
+from cStringIO import StringIO
+import cPickle
+
+class CellBroadcastRequest(object):
+
+    def __init__(self, addr):
+        self.BAddr = addr
+
+    def packMessage(self, *msg, **args):
+        return cPickle.dumps((msg, args))
+        
+    def unpackMessage(self, txt):
+        msg, args = cPickle.loads(txt)
+        return msg, args
+        
+    def findFile(self, path, version, wait=5.0):
+        sock = socket.socket(sock.AF_INET, socket.SOCK_DRGAM)
+        dgram = self.packMessage("findFile", path, version)
+        sock.sendto(dgram, self.BAddr)
+        sock.settimeout(wait)
+        try:    
+            msg, addr = sock.recvfom(1000)
+        except socket.timeout:
+            return None
+        (reply, url), args = self.unpackMessage(msg)
+        assert reply == "findFile"
+        return url
+        
+    def acceptFile(self, path, version, replicas, wait=5.0):
+        sock = socket.socket(sock.AF_INET, socket.SOCK_DRGAM)
+        dgram = self.packMessage("acceptFile", path, version, replicas)
+        sock.sendto(dgram, self.BAddr)
+        sock.settimeout(wait)
+        try:    
+            msg, addr = sock.recvfom(1000)
+        except socket.timeout:
+            return None
+        (reply, url), args = self.unpackMessage(msg)
+        assert reply == "acceptFile"
+        return url
+        
+    def removeVersions(self, path, version_range):
+        sock = socket.socket(sock.AF_INET, socket.SOCK_DRGAM)
+        dgram = self.packMessage("removeVersions", path, version_range[0], version_range[1])
+        sock.sendto(dgram, self.BAddr)
+        
+        
+        
+        
+        
+        
+        
