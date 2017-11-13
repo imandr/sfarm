@@ -25,21 +25,22 @@ class SServerHandler(WSGIhandler):
         if not fd:
             return Response(status="404 Not found")
         cb = self.App.broadcastRequest()
-        url = cb.findFile(filepath, fd.Version)
+        url = cb.getFile(filepath, fd.Version)
         if not url:
             return Response(status="408 Time-out")
         self.redirect(url)
         
-    def put(self, req, relpath, replicas = 1, **args):
+    def put(self, req, relpath, replicas = 1, size = None, **args):
         if req.method != "POST":
             return Response(status="400 Bad request (method must be POST)")
         replicas = int(replicas)
         filepath = relpath
+        size = int(size)
         fd = VDatabase.createFile(filepath)
         if not fd:
             return Response(status="404 Can not create file version")
         cb = self.App.broadcastRequest()
-        url = cb.acceptFile(filepath, fd.Version, replicas)
+        url = cb.putFile(filepath, fd.Version, size, replicas)
         if not url:
             return Response(status="408 Time-out")        
         return Response(url)
