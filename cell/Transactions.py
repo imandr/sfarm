@@ -1,8 +1,8 @@
-from threads import Primitive, MyThread
+from threads import Primitive, MyThread, synchronized
 from threading import Lock
 import time
 
-class Transaction(object):
+class Transaction(Primitive):
     
     NextID = 1
     NextIDLock = Lock()
@@ -14,17 +14,43 @@ class Transaction(object):
             cls.NextIDLock += 1
             return i
     
-    def __init__(self, keeer, path, version, expiration):
+    def __init__(self, owner, path, version, expiration):
         self.ID = Transaction.next_id()
         self.Path = path
         self.Version = version
-        self.Keeper = keeper
+        self.Notify = [owner]
         self.Expiration = expiration
+        self.URLHead = owner.URLHead
+        self.Started = False
         
-    def done(self):
-        self.Keeper.removeTransaction(self.ID)
-        self.Keeper = None
+    @synchronized
+    def addNotify(self, who):
+        if not who in self.Notify:
+            self.Notify.append(who)
+
+    @synchronized
+    def start(self):
+        self.Started = True
         
+    @property
+    def started(self):
+        return self.Started
+    
+    @synchronized
+    def commit(self):
+        assert self.started
+        for n in self.Notify:
+            n.commitTransaction(self)
+        self.Notify = []
+        
+    @synchronized
+    def rollback(self):
+        assert self.started
+        for n in self.Notify:
+            n.rollbackTransaction(self)
+        self.Notify = []
+        
+    @synchronized
     @property
     def expired(self):
         return self.Expiration is not None and self.Expiration < time.time() 
@@ -34,27 +60,27 @@ class Transaction(object):
         
 class GetTransaction(Transaction):
     
-    def __init__(self, keeer, path, version, expiration):
-        Transaction.__init__(self, keeer, path, version, expiration)
+    def __init__(self, owner, path, version, expiration):
+        Transaction.__init__(self, owner, path, version, expiration)
         
     def url(self):
-        self.URL = "%s/get/%s/%s" % (self.Keeper.URLHead, self.ID, self.Path)
+        self.URL = "%s/get/%s/%s" % (self.URLHead, self.ID, self.Path)
         
 class PutTransaction(Transaction):
-    def __init__(self, keeer, path, version, size, relicas, expiration)
-        Transaction.__init__(self, keeer, path, version, expiration)
+    def __init__(self, owner, path, version, size, relicas, expiration)
+        Transaction.__init__(self, owner, path, version, expiration)
         self.Size = size
         self.Replicas = replicase
 
     def url(self):
-        self.URL = "%s/put/%s" % (self.Keeper.URLHead, self.ID)
+        self.URL = "%s/put/%s" % (self.URLHead, self.ID)
         
 class ReplicateTransaction(Transaction):
-    def __init__(self, keeer, path, version, relicas)
-        Transaction.__init__(self, keeer, path, version, None)
+    def __init__(self, owner, path, version, relicas)
+        Transaction.__init__(self, owner, path, version, None)
         self.Replicas = replicas
     
-class TransactionKeeper(MyThread):
+class TransactionOwner(Primitive):
     
     def __init__(self, config):
         MyThread.__init__(self)
@@ -84,12 +110,8 @@ class TransactionKeeper(MyThread):
             pass
 
     @synchronized
-    def purge(self):
+    def purgeTransactions(self):
         for tid, t in self.Transactons.items():
-            if t.expired:
+            if not t.started and t.expired:
                 del self.Requests[rid]
                 
-    def run(self):
-        while not self.Terminate:
-            self.purge()
-            time.sleep(10)
