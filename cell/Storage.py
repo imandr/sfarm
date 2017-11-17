@@ -10,26 +10,31 @@ class Storage(Primitive):
         self.PSAs = {}
 
     @synchronized
-    def findFile(self, lpath, version):
+    def findFile(self, lpath, version = None):
         for psa in self.PSAs.values():
-            if psa.hasFile(lpath, version):
-                return psa
+            info = psa.findFile(lpath, version):
+            if info:
+                return info, psa
+        return None, None
         
     @synchronized
     def getTransaction(self, lpath, version):
-        psa = self.findFile(lpath, verison)
-        if psa:
-            return psa.getTransaction(lpath, version)
+        info, psa = self.findFile(lpath, verison)
+        if info:
+            return psa.getTransaction(info)
         
     @synchronized
     def putTransaction(self, lpath, version, size, replicas):
-        if self.findFile(lpath, version) is not None:
+        info, psa = self.findFile(lpath)
+        if info is not None:
             return None
         psas = self.PSAs.values()
         random.shuffle(psas)            # apply preferences here
+        info = VFSFileInfo(lpath, version)
+        info.setActualSize(size)
         for psa in psas:
-            if psa.canAcceptFile(lpath, version, size):
-                return psa.putTransaction(self, lpath, version, size, replicas)
+            if psa.canReceive(info):
+                return psa.putTransaction(self, info, replicas)
                 
     @synchronized
     def replicateTransaction(self, lpath, version, replicas):
@@ -49,6 +54,7 @@ class	PSA(TransactionOwner, MyThread):
 		self.InfoRoot = self.Root + '/info'
 		self.Used = 0L
 		self.LastPrune = 0
+        self.TransactionExpiration = 5.0            # get from config
 
 	def log(self, msg):
 		msg = 'PSA[%s@%s]: %s' % (self.Name, self.Root, msg)
@@ -81,18 +87,6 @@ class	PSA(TransactionOwner, MyThread):
 		#if not dp:	dp = '/'
 		return dp
 
-	def canonicPath(self, path):
-		# replace repearing '/' with singles
-		while path:
-			inx = string.find(path, '//')
-			if inx >= 0:
-				path = path[:inx] + '/' + path[inx+2:]
-			else:
-				break
-		if not path or path[0] != '/':
-			path = '/' + path
-		return path
-
 	def calcUsed(self):
 		used = 0
 		for lp, i in self.listFiles():
@@ -108,6 +102,26 @@ class	PSA(TransactionOwner, MyThread):
 		
 	def freeMB(self):
 		return free_MB(self.Root)
+
+
+    #
+    # Storage Interface
+    #
+    
+	def findFile(self, lpath, version = None):
+		info = self.getFileInfo(lpath)
+        if info is None:    return None
+        if version is not None and version != info.Version: return None
+        return info
+
+	def canReceiveFile(self, info):
+		return self.free() >= info.sizeMB() and self.attractor(info.dataClass()) > 0
+
+    def getTransaction(self, info):
+        return GetTransaction(self, info, time.time() + self.TransactionExpiration)
+        
+    def putTransaction(self, info, replicas):
+        return PutTransaction(self, info, replicas, time.time() + self.TransactionExpiration)
 
 	def storeFileInfo(self, lpath, info):
 		ipath = self.fullInfoPath(lpath)
@@ -138,7 +152,8 @@ class	PSA(TransactionOwner, MyThread):
 		else:
 			str = f.read()
 			f.close()
-			info = VFSFileInfo(lpath, str)
+			info = VFSInfo.fromJSON(str)
+            assert info.Type == 'f' and info.Path == lpath
 		return info
 
 	def listRec(self, list, dir):
@@ -209,9 +224,6 @@ class	PSA(TransactionOwner, MyThread):
 			except: pass
 			dp = self.dirPath(dp)
 		
-	def canReceive(self, lpath, info):
-		return self.free() >= info.sizeMB() and self.attractor(info.dataClass()) > 0
-
 	def receive(self, lpath, info):
 		# create new file, data (0 size) and info
 		# set file UID
@@ -245,9 +257,6 @@ class	PSA(TransactionOwner, MyThread):
 		
 	def send(self, lpath):
 		return GetTxn(self, lpath)
-
-	def hasFile(self, lpath):
-		return self.getFileInfo(lpath)
 
 	def status(self):
 		# returns size, used, reserved, physically free

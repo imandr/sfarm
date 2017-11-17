@@ -2,6 +2,7 @@ from threads import Primitive
 from wsgi_py import WSGIApp, WSGIHandler, Application
 from VDatabase import VDatabase
 from Cell import CellBroadcastRequest
+from VFSInfo import VFSCanonicPath
 
 class SServerApp(WSGIApp):
 
@@ -20,12 +21,12 @@ class SServerHandler(WSGIhandler):
     def get(self, req, relpath, **args):
         if req.method != "GET":
             return Response(status="400 Bad request (method must be GET)")
-        filepath = relpath
-        fd = VDatabase.findFile(filepath)
-        if not fd:
+        lpath = VFSCanonicPath(relpath)
+        info = VDatabase.findFile(lpath)
+        if not info:
             return Response(status="404 Not found")
         cb = self.App.broadcastRequest()
-        url = cb.getFile(filepath, fd.Version)
+        url = cb.getFile(info)
         if not url:
             return Response(status="408 Time-out")
         self.redirect(url)
@@ -34,13 +35,14 @@ class SServerHandler(WSGIhandler):
         if req.method != "POST":
             return Response(status="400 Bad request (method must be POST)")
         replicas = int(replicas)
-        filepath = relpath
+        lpath = VFSCanonicPath(relpath)
         size = int(size)
-        fd = VDatabase.createFile(filepath)
-        if not fd:
+        info = VDatabase.createNextVersion(lpath)
+        if not info:
             return Response(status="404 Can not create file version")
+        info,setActualSize = size
         cb = self.App.broadcastRequest()
-        url = cb.putFile(filepath, fd.Version, size, replicas)
+        url = cb.putFile(info, replicas)
         if not url:
             return Response(status="408 Time-out")        
         return Response(url)
@@ -64,12 +66,12 @@ class SServerHandler(WSGIhandler):
     def remove(self, req, relpath, **args):
         if req.method != "POST":
             return Response(status="400 Bad request (method must be POST)")
-        filepath = relpath
-        fd = VDatabase.findFile(filepath)
-        if not fd:
+        lpath = VFSCanonicPath(relpath)
+        info = VDatabase.findFile(lpath)
+        if not info:
             return Response(status="404 Not found")
-        VDatabase.removeFile(filepath)
-        self.App.broadcastRequest().removeVersions(filepath, fd.Version)
+        VDatabase.removeFile(info)
+        self.App.broadcastRequest().removeVersions(info, info.Version)
         return Response("OK")
             
 application = Application(WSGIApp, WSGIhandler)

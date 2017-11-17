@@ -14,14 +14,14 @@ class Transaction(Primitive):
             cls.NextIDLock += 1
             return i
     
-    def __init__(self, owner, path, version, expiration):
+    def __init__(self, owner, info, expiration):
         self.ID = Transaction.next_id()
-        self.Path = path
-        self.Version = version
+        self.Info = info
         self.Notify = [owner]
         self.Expiration = expiration
         self.URLHead = owner.URLHead
         self.Started = False
+        owner.addTransaction(self)
         
     @synchronized
     def addNotify(self, who):
@@ -51,6 +51,11 @@ class Transaction(Primitive):
         self.Notify = []
         
     @synchronized
+    def cancel(self):
+        assert not self.started
+        self.Notify = []
+        
+    @synchronized
     @property
     def expired(self):
         return self.Expiration is not None and self.Expiration < time.time() 
@@ -60,24 +65,23 @@ class Transaction(Primitive):
         
 class GetTransaction(Transaction):
     
-    def __init__(self, owner, path, version, expiration):
-        Transaction.__init__(self, owner, path, version, expiration)
+    def __init__(self, owner, info, expiration):
+        Transaction.__init__(self, owner, info, expiration)
         
     def url(self):
-        self.URL = "%s/get/%s/%s" % (self.URLHead, self.ID, self.Path)
+        self.URL = "%s/get/%s/%s" % (self.URLHead, self.ID, self.Info.lastName)
         
 class PutTransaction(Transaction):
-    def __init__(self, owner, path, version, size, relicas, expiration)
-        Transaction.__init__(self, owner, path, version, expiration)
-        self.Size = size
+    def __init__(self, owner, info, relicas, expiration)
+        Transaction.__init__(self, owner, info, expiration)
         self.Replicas = replicase
 
     def url(self):
         self.URL = "%s/put/%s" % (self.URLHead, self.ID)
         
 class ReplicateTransaction(Transaction):
-    def __init__(self, owner, path, version, relicas)
-        Transaction.__init__(self, owner, path, version, None)
+    def __init__(self, owner, info, relicas)
+        Transaction.__init__(self, owner, info, None)
         self.Replicas = replicas
     
 class TransactionOwner(Primitive):
@@ -91,16 +95,8 @@ class TransactionOwner(Primitive):
         self.URLHead = config.URLHead
         
     @synchronized
-    def getTransaction(self, path, version):
-        t = GetTransaction(self, path, version, time.time() + self.ExpirationInterval)
+    def addTransaction(self, t):
         self.Transactions[t.ID] = t
-        return t
-        
-    @synchronized
-    def putTransaction(self, path, version, size, replicas):
-        t = PutTransaction(self, path, version, size, replicas, time.time() + self.ExpirationInterval)
-        self.Transactions[t.ID] = t
-        return t
         
     @synchronized
     def removeTransaction(self, tid):
@@ -113,5 +109,6 @@ class TransactionOwner(Primitive):
     def purgeTransactions(self):
         for tid, t in self.Transactons.items():
             if not t.started and t.expired:
-                del self.Requests[rid]
+                t.cancel()
+                del self.Transactions[tid]
                 

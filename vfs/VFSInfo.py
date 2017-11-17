@@ -2,25 +2,26 @@ import time, json
 import serialize
 
 def VFSCanonicPath(path):
-	if not path:
-		path = '/'
-	if path[0] != '/':
+	if path[:1] != '/':
 		path = '/' + path
 	while "//" in path:
 		path = path.replace('//', '/')
-	if path and path.endswith("/"):
+	if path.endswith("/"):
 		path = path[:-1]
 	return path		
+    
+canonicPath = VFSCanonicPath
 
 class	VFSInfo:
 	Version = '1.0'
 	def __init__(self, typ, path):
 		self.Type = typ
 		self.Path = VFSCanonicPath(path)
-		self.Username = None
+		self.Owner = None
 		self.Prot = 'rwr-'
 		self.Attrs = {}
 		self.Flags = 0
+        self.CTime = time.time()
 
     @staticmethod
     def fromDict(dct):
@@ -32,10 +33,11 @@ class	VFSInfo:
             info = VFSFileInfo(path)
         else:
             raise ValueError("Unknown item type '%s'" % (typ,))
-        info.Username = dct["Username"]
+        info.Owner = dct["Owner"]
         info.Prot = dct["Protection"]
         info.Attrs = dct["Attributes"]
         info.Flags = dct["Flags"]
+        info.CTime = dct["CTime"]
         info.fillFromDict(dct)
         return info
         
@@ -50,10 +52,11 @@ class	VFSInfo:
         return dict(
             Type = self.Type,
             Path = self.Path,
-            Username = self.Username,
+            Owner = self.Owner,
             Protection = self.Prot,
             Attributes = self.Attrs,
-            Flags = self.Flags
+            Flags = self.Flags,
+            CTime = self.Ctime
         )
         
     def toJSON(self):
@@ -75,24 +78,28 @@ class	VFSInfo:
 
 	def dataClass(self):
 		return self['__data_class'] or '*'
+        
+    @property
+    def lastName(self):
+        return self.Path.split("/")[-1]
 
 class	VFSFileInfo(VFSInfo):
 	FLAG_ESTIMATE_SIZE = 1
 
-	def __init__(self, path):
+	def __init__(self, path, version = None):
 		VFSInfo.__init__(self, 'f', path)
-		self.CTime = int(time.time())
 		self.Servers = []
 		self.Size = None
+        self.Version = None
         
     def fillFromDict(self, dct):
-        self.CTime = dct.get("CTime", int(time.time()))
+        self.Version = dct.get("Version")
         self.Servers = dct.get("Servers",[])
         self.Size = dct.get("Size")    
 
     def toDict(self):
         dct = VFSInfo.toDict(self)
-        dct["CTime"] = self.CTime
+        dct["Version"] = self.Version
         dct["Servers"] = self.Servers
         dct["Size"] = self.Size
 
@@ -133,5 +140,5 @@ class	VFSFileInfo(VFSInfo):
 		
 class	VFSDirInfo(VFSInfo):
 	def __init__(self, path, str = None):
-		VFSItemInfo.__init__(self, path, 'd', str)
+		VFSInfo.__init__(self, path, 'd', str)
 		
