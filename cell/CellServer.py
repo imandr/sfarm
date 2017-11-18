@@ -47,9 +47,9 @@ class CellBroadcastRequest(object):
         assert reply == "put"
         return url
         
-    def removeVersions(self, info, max_version):
+    def removeVersions(self, lpath, except_version):
         sock = socket.socket(sock.AF_INET, socket.SOCK_DRGAM)
-        dgram = self.packMessage("rm", info.Path, max_version)
+        dgram = self.packMessage("rm", lpath, except_version)
         sock.sendto(dgram, self.BAddr)
         
 class Cell(MyThread):
@@ -73,43 +73,32 @@ class Cell(MyThread):
             elif msg == "put":
                 reply = self.putFile(*msg[:1], **args)
             elif msg == "rm":
-                reply = self.removeVersions(*msg[:1], **args)
+                reply = self.removeVersionsExcept(*msg[:1], **args)
             if reply is not None:
                 if not isinstance(reply, tuple):    reply = (reply,)
                 reply = (msg,) + reply
                 sock.sendto(packMessage(*reply), addr)
                 
     def getFile(self, path, version):
-        filedesc = self.Storage.findFile(path)
-        if filedesc and filedesc.Version == version:
-            t = self.Storage.getTransaction(path, version)
-            r = self.RequestKeeper.downloadRequest(t)
-            return r.URL
+        t = self.Storage.getTransaction(path, version)
+        if t is not None:
+            return t.url
         
     def putFile(self, path, version, size, replicas):
-        filedesc = self.Storage.findFile(path)
-        if filedesc is None or version != filedesc.Version:
-            if fildedesc is not None:
-                self.Storage.delFile(path, filedesc.Version)
-            t = self.Storage.putTransaction(path, version, size)
-            if t is not None:
-                r = self.RequestKeeper.uploadRequest(t, replicas)
-            return r.URL
+        t = self.Storage.putTransaction(path, version, size, replicas)
+        if t is not None:
+            return t.url
     
-    def removeVersions(self, path, max_version):
-        filedesc = self.Storage.findFile(path)
-        if filedesc is not None and filedesc.Version <= max_version:
-            self.Storage.removeFile(path, filedesc.Version)
-            return "OK", filedesc.Version
-        else:
-            return "OK", None
+    def removeVersionsExcept(self, path, except_version):
+        self.Storage.deleteVersionsExcept(path, except_version)
         
 class CellServerApp(WSGIApp):
     
-    def __init__(self, request, handler_class, request_keeper, storage):
+    def __init__(self, request, handler_class, storage):
         WSGIApp.__init__(request, handler_class)
-        self.RequestKeeper = request_keeper
         self.Storage = storage
+        
+class CellServerHandler(WSGIAHndler):
 
     # URL looks like this: ..../get/request_id/file_path
     def get(self, request, relpath, **args):

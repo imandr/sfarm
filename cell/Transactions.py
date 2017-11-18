@@ -68,16 +68,18 @@ class GetTransaction(Transaction):
     def __init__(self, owner, info, expiration):
         Transaction.__init__(self, owner, info, expiration)
         
+    @property
     def url(self):
-        self.URL = "%s/get/%s/%s" % (self.URLHead, self.ID, self.Info.lastName)
+        return "%s/get/%s/%s" % (self.URLHead, self.ID, self.Info.lastName)
         
 class PutTransaction(Transaction):
     def __init__(self, owner, info, relicas, expiration)
         Transaction.__init__(self, owner, info, expiration)
         self.Replicas = replicase
 
+    @property
     def url(self):
-        self.URL = "%s/put/%s" % (self.URLHead, self.ID)
+        return "%s/put/%s" % (self.URLHead, self.ID)
         
 class ReplicateTransaction(Transaction):
     def __init__(self, owner, info, relicas)

@@ -10,16 +10,24 @@ class Storage(Primitive):
         self.PSAs = {}
 
     @synchronized
-    def findFile(self, lpath, version = None):
+    def findVersion(self, lpath, version, delete_if_differs = False):
         for psa in self.PSAs.values():
-            info = psa.findFile(lpath, version):
+            info = psa.findFile(lpath, version = version, delete_if_differs = delete_if_differs):
+            if info is not None:
+                return info, psa
+        return None, None
+        
+    @synchronized
+    def findFile(self, lpath):
+        for psa in self.PSAs.values():
+            info = psa.findFile(lpath):
             if info:
                 return info, psa
         return None, None
         
     @synchronized
     def getTransaction(self, lpath, version):
-        info, psa = self.findFile(lpath, verison)
+        info, psa = self.findVersion(lpath, verison, delete_if_differs=True)
         if info:
             return psa.getTransaction(info)
         
@@ -38,12 +46,16 @@ class Storage(Primitive):
                 
     @synchronized
     def replicateTransaction(self, lpath, version, replicas):
-        psa = self.findFile(lpath, verison)
-        if psa:
+        info, psa = self.findVersion(lpath, verison, delete_if_differs=True)
+        if info is not None:
             return psa.replicateTransaction(lpath, version, replicas)
         
+    @synchronized
+    def deleteVersionsExcept(self, lpath, version_to_keep):
+        self.findVersion(lpath, version_to_keep, delete_if_differs=True)
         
-class	PSA(TransactionOwner, MyThread):
+        
+class PSA(TransactionOwner, MyThread):
 
 	def __init__(self, name, config, attractors):	# size in mb
         TransactionOwner.__init__(self, config)
@@ -108,10 +120,13 @@ class	PSA(TransactionOwner, MyThread):
     # Storage Interface
     #
     
-	def findFile(self, lpath, version = None):
+	def findFile(self, lpath, version = None, delete_if_differs = False):
 		info = self.getFileInfo(lpath)
         if info is None:    return None
-        if version is not None and version != info.Version: return None
+        if version is not None and version != info.Version: 
+            if delete_if_differs:
+                self.delFile(lpath)
+            return None
         return info
 
 	def canReceiveFile(self, info):
