@@ -99,36 +99,46 @@ class CellServerApp(WSGIApp):
         self.Storage = storage
         
 class CellServerHandler(WSGIAHndler):
+    
+    def file_iterator(self, f, size=100000):
+        while True:
+            block = f.read(size)
+            if not block:   break
+            yield block
 
     # URL looks like this: ..../get/request_id/file_path
     def get(self, request, relpath, **args):
-        rid, path = relpath.split("/", 1)
-        rid = int(rid)
-        r = self.RequestKeeper.request(rid)
-        if not r:
+        if request.method != "GET":
+            return Response(status="400 GET method expected")
+        tid, path = relpath.split("/", 1)
+        tid = int(rid)
+        t = self.App.Storage.transaction(tid)
+        if not t:
             return Response(status="404 not found")
-        if r.Path != path:
-            self.RequestKeeper.removeRequest(r.ID)
+        info = t.Info
+        if info.Path != path:
             return Response(status="400 file path mismatch")
-        file_iter = self.Storage.fileIterator(path, r.Version)
-        if file_iter is None:
-            return Response(status="404 not found")
-        return Response(app_iter = file_iter)
+        with t.open() as f:
+            file_iter = self.file_iterator(f)
+            return Response(app_iter = file_iter)
         
     # URL looks like this: ..../put?rid=request_id
     def put(self, request, relpath, rid=None, **args):
-        if request.method != "POST":
+        if request.method != "POST" and request.method != "PUT":
             return Response(status="400 POST method expected")
-        rid = int(rid)
-        r = self.RequestKeeper.request(rid)
-        if not r:
+        tid = int(rid)
+        t = self.App.Storage.transaction(tid)
+        if not t:
             return Response(status="404 not found")
-        try:    
-            with self.Storage.storeTransaction(r.Path, r.Version) as f:
-                
-            self.Storage.storeFile(r.Path, r.Version, request.body_file)
-        except:
-            return Response(status="500 storage error")
+        info = t.Info
+        if info.Path != path:
+            return Response(status="400 file path mismatch")
+        self.App.Storage.removeTransaction(t)
+        with t.open() as f:
+            while True:
+                block = request.body_file.read(100000)
+                if not block:   break
+                f.write(block)
         return Response("OK")
         
         

@@ -30,7 +30,7 @@ class Storage(Primitive):
         info, psa = self.findVersion(lpath, verison, delete_if_differs=True)
         if info:
             return psa.getTransaction(info)
-        
+            
     @synchronized
     def putTransaction(self, lpath, version, size, replicas):
         info, psa = self.findFile(lpath)
@@ -138,6 +138,20 @@ class PSA(TransactionOwner, MyThread):
     def putTransaction(self, info, replicas):
         return PutTransaction(self, info, replicas, time.time() + self.TransactionExpiration)
 
+    @synchronized
+    def commitTransaction(self, txn):
+        if isinstance(txn, PutTransaction):
+            # start replication here
+            pass
+            
+    @synchronized
+    def rollbackTransaction(self, txn):
+        if isinstance(txn, PutTransaction):
+            self.delFile(txn.Info.Path)
+
+    def openFile(self, info, mode):
+        return open(self.fullDataPath(info.Path), mode)
+        
 	def storeFileInfo(self, lpath, info):
 		ipath = self.fullInfoPath(lpath)
 		try:	os.makedirs(self.dirPath(ipath),0711)
