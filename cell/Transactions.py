@@ -70,6 +70,43 @@ class Transaction(Primitive):
     def url(self):
         raise NotImplementedError
         
+class FileOpenForRead:
+    
+    def __init__(self, txn):
+        self.Txn = txn
+        self.F = self.Owner.openFile(txn.Info, "r")
+        
+    def __enter__(self):
+        self.Txn.start()
+        
+    def __exit__(self, typ, value, tback):
+        self.F.close()
+        self.Txn.commit()
+        self.Txn = None
+        
+    def read(self, size):
+        return self.F.read(size)
+        
+class FileOpenForWrite:
+    
+    def __init__(self, txn):
+        self.Txn = txn
+        self.F = self.Owner.openFile(txn.Info, "w")
+        
+    def __enter__(self):
+        self.Txn.start()
+        
+    def __exit__(self, typ, value, tback):
+        self.F.close()
+        if typ:
+            self.Txn.rollback(typ, value, tback)
+        else:
+            self.Txn.commit()
+        self.Txn = None
+        
+    def write(self, block):
+        return self.F.write(block)
+        
 class GetTransaction(Transaction):
     
     def __init__(self, owner, info, expiration):
@@ -79,23 +116,6 @@ class GetTransaction(Transaction):
     def url(self):
         return "%s/get/%s/%s" % (self.URLHead, self.ID, self.Info.lastName)
         
-    class FileOpenForRead:
-        
-        def __init__(self, txn):
-            self.Txn = txn
-            self.F = self.Owner.openFile(txn.Info, "r")
-            
-        def __enter__(self):
-            self.Txn.start()
-            
-        def __exit__(self, typ, value, tback):
-            self.F.close()
-            self.Txn.commit()
-            self.Txn = None
-            
-        def read(self, size):
-            return self.F.read(size)
-            
     def open(self):
         return FileOpenForRead(self)
         
@@ -108,26 +128,6 @@ class PutTransaction(Transaction):
     def url(self):
         return "%s/put/%s" % (self.URLHead, self.ID)
         
-    class FileOpenForWrite:
-        
-        def __init__(self, txn):
-            self.Txn = txn
-            self.F = self.Owner.openFile(txn.Info, "w")
-            
-        def __enter__(self):
-            self.Txn.start()
-            
-        def __exit__(self, typ, value, tback):
-            self.F.close()
-            if typ:
-                self.Txn.rollback(typ, value, tback)
-            else:
-                self.Txn.commit()
-            self.Txn = None
-            
-        def write(self, block):
-            return self.F.write(block)
-            
     def open(self):
         return FileOpenForWrite(self)
 
@@ -135,7 +135,10 @@ class ReplicateTransaction(Transaction):
     def __init__(self, owner, info, relicas)
         Transaction.__init__(self, owner, info, None)
         self.Replicas = replicas
-    
+
+    def open(self):
+        return FileOpenForRead(self)
+
 class TransactionOwner(Primitive):
     
     def __init__(self, config):

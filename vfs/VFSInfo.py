@@ -22,6 +22,7 @@ class	VFSInfo:
 		self.Attrs = {}
 		self.Flags = 0
         self.CTime = time.time()
+        self.Size = 0
 
     @staticmethod
     def fromDict(dct):
@@ -38,6 +39,7 @@ class	VFSInfo:
         info.Attrs = dct["Attributes"]
         info.Flags = dct["Flags"]
         info.CTime = dct["CTime"]
+        info.Size = dct["Size"]
         info.fillFromDict(dct)
         return info
         
@@ -56,7 +58,8 @@ class	VFSInfo:
             Protection = self.Prot,
             Attributes = self.Attrs,
             Flags = self.Flags,
-            CTime = self.Ctime
+            CTime = self.Ctime,
+            Size = self.Size
         )
         
     def toJSON(self):

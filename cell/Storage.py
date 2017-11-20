@@ -1,6 +1,13 @@
-from threads import Primitive, MyThread, synchronized
+from threads import Primitive, MyThread, synchronized, Task
 from random import shuffle
 from logfile import LogFile
+
+class ReplicatorTask(Task):
+    
+    def run(self, transaction):
+        assert isinstance(transaction, ReplicateTransaction)
+        
+        
 
 class Storage(Primitive):
 
@@ -8,6 +15,7 @@ class Storage(Primitive):
         Primitive.__init__(self)
         # read PSAs from config
         self.PSAs = {}
+        self.ReplicatorQueue = {}
 
     @synchronized
     def findVersion(self, lpath, version, delete_if_differs = False):
@@ -42,8 +50,16 @@ class Storage(Primitive):
         info.setActualSize(size)
         for psa in psas:
             if psa.canReceive(info):
-                return psa.putTransaction(self, info, replicas)
+                t = psa.putTransaction(self, info, replicas)
+                t.addNotify(self)
                 
+    @synchronized
+    def commitTransaction(self, txn):
+        assert isinstance(txn, PutTransaction)
+        info = txn.Info
+        replicas = txn.Replicas
+        rt = self.replicateTransaction(info.Path, info.Version, replicas)
+        
     @synchronized
     def replicateTransaction(self, lpath, version, replicas):
         info, psa = self.findVersion(lpath, verison, delete_if_differs=True)
@@ -141,8 +157,9 @@ class PSA(TransactionOwner, MyThread):
     @synchronized
     def commitTransaction(self, txn):
         if isinstance(txn, PutTransaction):
+            info = txn.Info
+            self.storeFileInfo(info.Path, info)
             # start replication here
-            pass
             
     @synchronized
     def rollbackTransaction(self, txn):
@@ -156,9 +173,7 @@ class PSA(TransactionOwner, MyThread):
 		ipath = self.fullInfoPath(lpath)
 		try:	os.makedirs(self.dirPath(ipath),0711)
 		except: pass
-		f = open(ipath,'w')
-		f.write(info.serialize())
-		f.close()
+		open(ipath,'w').write(info.toJSON())
 		# set file owner here
 				
 	def getFileInfo(self, lpath):
